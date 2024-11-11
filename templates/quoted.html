@@ -1,0 +1,17 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    Quoted
+{% endblock %}
+
+{% block main %}
+    <h1 style="margin-bottom: 30px">Stock Quote</h1>
+    {% if quote %}
+
+        <p style="font-size: 20px">A share of {{ quote["symbol"] }} costs {{ quote["price"] | usd }}</p>
+
+    {% else %}
+        <p>Invalid symbol.</p>
+    {% endif %}
+        <a href="/quote">Back</a>
+{% endblock %}
