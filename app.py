@@ -31,50 +31,6 @@ def after_request(response):
     return response
 
 
-@app.route("/", methods=["POST", "GET"])
-@login_required
-def index():
-        try:
-            user_id = session["user_id"]
-
-            rows = db.execute("SELECT cash FROM users WHERE id = ?", user_id)
-            cash = rows[0]["cash"]
-
-            holdings = db.execute("SELECT symbol, SUM(shares) as total_shares FROM transactions WHERE user_id = ? GROUP BY symbol HAVING total_shares > 0", user_id)
-
-            stocks = []
-            total_value = 0
-
-            for holding in holdings:
-
-                symbol = holding["symbol"]
-                total_shares = holding["total_shares"]
-
-                quote = lookup(symbol)
-
-                if quote is None:
-                    return apology("invalid symbol", 400)
-
-                current_price = quote["price"]
-                total_stock_value = total_shares * current_price
-
-                stocks.append({
-                    "symbol": symbol,
-                    "shares": total_shares,
-                    "price": current_price,
-                    "total": total_stock_value,
-                })
-
-                total_value += total_stock_value
-
-            grand_total = total_value + cash
-
-            return render_template("index.html", stocks=stocks, cash=cash, grand_total=grand_total)
-        
-        except Exception as e:
-            print(f"Error: {e}")
-            return apology("Error occured", 500)
-
 
 @app.route("/buy", methods=["GET", "POST"])
 @login_required
@@ -135,62 +91,22 @@ def buy():
 @app.route("/history")
 @login_required
 def history():
-
     user_id = session["user_id"]
-
-    transactions = db.execute("SELECT symbol, shares, price, transaction_type, transaction_time FROM transactions WHERE user_id = ? ORDER BY transaction_time DESC", user_id)
-
+    
+    transactions = db.execute(
+        "SELECT symbol, shares, price, transaction_type, transaction_time "
+        "FROM transactions WHERE user_id = ? "
+        "ORDER BY transaction_time DESC", 
+        user_id
+    )
+    
+    # Format each transaction
+    for transaction in transactions:
+        transaction["price"] = usd(transaction["price"])
+        transaction["symbol"] = transaction["symbol"].upper()  # Convert symbol to uppercase
+    
     return render_template("history.html", transactions=transactions)
 
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    """Log user in"""
-
-    # Forget any user_id
-    session.clear()
-
-    # User reached route via POST (as by submitting a form via POST)
-    if request.method == "POST":
-        # Ensure username was submitted
-        if not request.form.get("username"):
-            return apology("must provide username", 403)
-
-        # Ensure password was submitted
-        elif not request.form.get("password"):
-            return apology("must provide password", 403)
-
-        # Query database for username
-        rows = db.execute(
-            "SELECT * FROM users WHERE username = ?", request.form.get("username")
-        )
-
-        # Ensure username exists and password is correct
-        if len(rows) != 1 or not check_password_hash(
-            rows[0]["hash"], request.form.get("password")
-        ):
-            return apology("invalid username and/or password", 403)
-
-        # Remember which user has logged in
-        session["user_id"] = rows[0]["id"]
-
-        # Redirect user to home page
-        return redirect("/")
-
-    # User reached route via GET (as by clicking a link or via redirect)
-    else:
-        return render_template("login.html")
-
-
-@app.route("/logout")
-def logout():
-    """Log user out"""
-
-    # Forget any user_id
-    session.clear()
-
-    # Redirect user to login form
-    return redirect("/")
 
 
 @app.route("/quote", methods=["GET", "POST"])
@@ -211,40 +127,6 @@ def quote():
 
     else:
         return render_template("quote.html")
-
-
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "POST":
-
-       username = request.form.get("username")
-       password = request.form.get("password")
-       confirmation = request.form.get("confirmation")
-
-       if not username:
-           return apology("must provide username", 400)
-
-       if not password:
-           return apology("must provide password", 400)
-
-       if not confirmation:
-           return apology("must retype password", 400)
-
-       if password != confirmation:
-           return apology("passwords don't match", 400)
-
-       hash = generate_password_hash(password)
-
-       try:
-           db.execute("INSERT INTO users (username, hash) VALUES (?, ?)", username, hash)
-       except ValueError:
-           return apology("username already exists", 400)
-
-       return redirect("/")
-
-    else:
-        return render_template("register.html")
-
 
 
 @app.route("/sell", methods=["GET", "POST"])
@@ -291,3 +173,129 @@ def sell():
         return render_template("sell.html", quote=stocks)
 
 
+
+@app.route("/", methods=["POST", "GET"])
+@login_required
+def index():
+    try:
+        user_id = session["user_id"]
+
+        rows = db.execute("SELECT cash FROM users WHERE id = ?", user_id)
+        cash = rows[0]["cash"]
+
+        holdings = db.execute("SELECT symbol, SUM(shares) as total_shares FROM transactions WHERE user_id = ? GROUP BY symbol HAVING total_shares > 0", user_id)
+
+        stocks = []
+        total_value = 0
+
+        for holding in holdings:
+            symbol = holding["symbol"]
+            total_shares = holding["total_shares"]
+
+            quote = lookup(symbol)
+            if quote is None:
+                return apology("invalid symbol", 400)
+
+            current_price = quote["price"]
+            total_stock_value = total_shares * current_price
+
+            stocks.append({
+                "symbol": symbol,
+                "shares": total_shares,
+                "price": current_price,
+                "total": total_stock_value,
+            })
+
+            total_value += total_stock_value
+
+        grand_total = total_value + cash
+
+        return render_template("index.html", stocks=stocks, cash=cash, grand_total=grand_total)
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return apology("Error occurred", 500)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        # Retrieve form inputs
+        username = request.form.get("username")
+        password = request.form.get("password")
+        confirmation = request.form.get("confirmation")
+
+        # Validate inputs
+        if not username:
+            return apology("must provide username", 400)
+
+        if not password:
+            return apology("must provide password", 400)
+
+        if not confirmation:
+            return apology("must retype password", 400)
+
+        if password != confirmation:
+            return apology("passwords don't match", 400)
+
+        # Hash the password
+        hash_password = generate_password_hash(password)
+
+        # Insert user into the database
+        try:
+            db.execute("INSERT INTO users (username, hash) VALUES (?, ?)", username, hash_password)
+        except Exception as e:
+            print(f"Error: {e}")
+            return apology("username already exists", 400)
+
+        flash("Registration successful!", 'success')
+
+        return redirect("/login")
+
+    else:
+        return render_template("register.html")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    """Log user in"""
+    # Forget any user_id
+    session.clear()
+
+    # User reached route via POST
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+
+        # Ensure username was submitted
+        if not username:
+            return apology("must provide username", 403)
+
+        # Ensure password was submitted
+        elif not password:
+            return apology("must provide password", 403)
+
+        # Query database for username
+        rows = db.execute("SELECT * FROM users WHERE username = ?", username)
+
+        # Ensure username exists and password is correct
+        if len(rows) != 1 or not check_password_hash(rows[0]["hash"], password):
+            return apology("invalid username and/or password", 403)
+
+        # Remember which user has logged in
+        session["user_id"] = rows[0]["id"]
+
+        flash("Login successful!", 'success')
+
+        return redirect("/")
+
+    else:
+        return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    """Log user out"""
+    # Forget any user_id
+    session.clear()
+    return redirect("/")
